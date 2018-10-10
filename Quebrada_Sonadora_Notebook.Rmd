@@ -1,0 +1,126 @@
+---
+title: "Quebrada Sonadora Nutrient Exports"
+output: html_notebook
+---
+Fluxes were calculated using the “loadflex” program (Appling et al. 2015), which is an enhancement of the widely used USGS “LOADEST” model (Runkel et al. 2004) as implemented in R. Both loadflex and LOADEST rely primarily on relationships between concentration of a solute and instantaneous discharge at the time of sampling to estimate concentrations when measured values of river chemistry are not available. In practice, and in our case, this often means that the 15-minute record of discharge at a given station is paired with an estimate of concentration based on weekly grab samples that span a range of discharge conditions.  
+
+First load some r packages we will use. 
+
+```{r}
+library('loadflex')
+library('rloadest')
+```
+
+Initially here we will load discharge and weekly grab sample data from csv files. This notebook details nutrient fluxes for the Quebrada Sonadora sampling site which has a watershed area of 261.58 hectares. 
+
+```{r}
+# newnames <- as.vector(t(read.table(
+#   "data/USGS_Sonadora_discharge.csv",
+#   sep=",",header=FALSE,nrows=1,stringsAsFactors=FALSE)[1,]))
+# 
+# USGS_Sonadora_Discharge <- read.table(
+#   "data/USGS_Sonadora_discharge.csv", 
+#   sep=",",header=FALSE,col.names=newnames,skip=1,stringsAsFactors=FALSE)
+# 
+# newnames <- as.vector(t(read.table(
+#   "data/UNH_Chemistry_QS.csv",
+#   sep=",",header=FALSE,nrows=1,stringsAsFactors=FALSE)[1,]))
+# 
+# QS_chem <- read.table(
+#   "data/UNH_Chemistry_QS.csv", 
+#   sep=",",header=FALSE,col.names=newnames,skip=1,stringsAsFactors=FALSE)
+
+QS_chem <- readRDS("data/QS_chem_UNH.rds")
+QSDischargeShort <- readRDS("data/QS_Discharge_USGS.rds")
+QSWatershedArea <- 261.5888
+
+```
+Flux totals 
+```{r}
+# QSDischargeShort <- USGS_Sonadora_Discharge
+
+#QS_chem$date <- as.POSIXct(strptime(QS_chem$Sample_Date  ,format="%m/%d/%Y",tz="America/Puerto_Rico"))
+
+#QSDischargeShort$date <- as.POSIXct(strptime(QSDischargeShort$date  ,format="%Y-%m-%d %H:%M:%S",tz="America/Puerto_Rico"))
+
+
+#Na
+QS_chemNa <- QS_chem[complete.cases(QS_chem["Na_mg_L"]),]
+QS_chemNa <- QS_chemNa[complete.cases(QS_chemNa["CFS"]),]
+
+
+meta <- metadata(constituent="Na_mg_L", flow="CFS", 
+                 dates="date", conc.units="mg/L", flow.units="cfs", load.units="kg", 
+                 load.rate.units="kg d^-1")
+
+
+lr <- loadReg2(loadReg(Na_mg_L ~ model(1), data=QS_chemNa,
+                       flow="CFS", dates="date", time.step="instantaneous", 
+                       flow.units="cfs", conc.units="mg/L", load.units="kg"))
+
+
+lc <- loadComp(reg.model=lr, interp.format="flux", 
+               interp.data=QS_chemNa, abs.or.rel.resids="relative", interp.function=rectangularInterpolation)
+
+# preds_lrNa <- predictSolute(lc, "flux",interval="prediction", QSDischargeShort, se.pred=TRUE, date=TRUE)
+
+preds_lcNa <- predictSolute(lc, "flux",interval="prediction", QSDischargeShort, se.pred=TRUE, date=TRUE)
+
+aggs_lcNa <- aggregateSolute(preds_lcNa,meta, format="flux total", se.preds=preds_lcNa$se.pred, agg.by="calendar year")
+
+lcConc <- loadComp(reg.model=lr, interp.format="conc", 
+                   interp.data=QS_chemNa, abs.or.rel.resids="relative", interp.function=rectangularInterpolation)
+
+preds_lcNaConc <- predictSolute(lcConc, "conc",interval="prediction", QSDischargeShort, se.pred=TRUE, date=TRUE)
+
+aggs_lcNaConc <- aggregateSolute(preds_lcNaConc,meta, format="conc", se.preds=preds_lcNaConc$se.pred, agg.by="calendar year")
+
+aggs_lcNa$Na_Kg_Ha_yr <- aggs_lcNa$Flux_Total / QSWatershedArea
+aggs_lcNa$Na_mg_l <- aggs_lcNaConc$Conc
+FluxTtotalsdf <- aggs_lcNa[, c('Na_mg_l','Na_Kg_Ha_yr','Calendar_Year')]
+FluxTtotalsdf
+```
+Calcium 
+```{r}
+QS_chemCa <- QS_chem[complete.cases(QS_chem["Ca_mg_L"]),]
+QS_chemCa <- QS_chemCa[complete.cases(QS_chemCa["CFS"]),]
+
+meta <- metadata(constituent="Ca_mg_L", flow="CFS", 
+                 dates="date", conc.units="mg/L", flow.units="cfs", load.units="kg", 
+                 load.rate.units="kg d^-1", station="Rio Piedras, PR")
+
+
+lr <- loadReg2(loadReg(Ca_mg_L ~ model(1), data=QS_chemCa,
+                       flow="CFS", dates="date", time.step="instantaneous", 
+                       flow.units="cfs", conc.units="mg/L", load.units="kg"))
+
+lc <- loadComp(reg.model=lr, interp.format="flux", 
+               interp.data=QS_chemCa, abs.or.rel.resids="relative", interp.function=rectangularInterpolation)
+
+preds_lrCa <- predictSolute(lc, "flux",interval="prediction", QSDischargeShort, se.pred=TRUE, date=TRUE)
+
+aggs_lrCa <- aggregateSolute(preds_lrCa,meta, format="flux total", se.preds=preds_lrCa$se.pred, agg.by="calendar year")
+
+lcConc <- loadComp(reg.model=lr, interp.format="conc", 
+                   interp.data=QS_chemCa, abs.or.rel.resids="relative", interp.function=rectangularInterpolation)
+
+preds_lcCaConc <- predictSolute(lcConc, "conc",interval="prediction", QSDischargeShort, se.pred=TRUE, date=TRUE)
+
+aggs_lcCaConc <- aggregateSolute(preds_lcCaConc,meta, format="conc", se.preds=preds_lcCaConc$se.pred, agg.by="calendar year")
+
+aggs_lrCa$Ca_Kg_Ha_yr <- aggs_lrCa$Flux_Total / QSWatershedArea
+aggs_lrCa$Ca_mg_l <- aggs_lcCaConc$Conc
+FluxTtotalsdf <- aggs_lrCa[, c('Ca_mg_l','Ca_Kg_Ha_yr','Calendar_Year')]
+FluxTtotalsdf
+
+```
+
+```{python}
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
